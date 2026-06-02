@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Wonderful Class Presence Hub", layout="wide")
 
 st.title("📊 Wonderful Class Presence Dashboard & Dynamic Matrix")
-st.write("Sistem Matriks Presensi Otomatis (No, Nama, NIM/NPM, Total Hadir, P1 - P-Dinamis) dengan Fitur Auto-Expand Kolom.")
+st.write("Sistem Matriks Presensi Otomatis (No, Nama, NIM/NPM, Kelas, Total Hadir, P1 - P-Dinamis) dengan Fitur Auto-Expand Kolom.")
 
 # ----------------- SIDEBAR INPUT -----------------
 st.sidebar.header("📁 Unggah Dokumen Presensi")
@@ -36,12 +36,20 @@ def temukan_kolom_nim(df_columns):
             return col
     return None
 
+# Fungsi bantuan untuk mendeteksi kolom Kelas secara fleksibel
+def temukan_kolom_kelas(df_columns):
+    for col in df_columns:
+        col_clean = str(col).strip().lower()
+        if col_clean in ['mengikuti kegiatan kelas', 'kelas', 'kegiatan kelas']:
+            return col
+    return None
+
 # ----------------- LOGIKA UTAMA -----------------
 if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
     if not source_files and master_file is None:
         st.error("❌ Mohon unggah minimal File Master Rekap Sebelumnya ATAU File Form Absensi Harian!")
     else:
-        with st.spinner("Sedang memproses dan menyelaraskan data presensi secara dinamis..."):
+        with st.spinner("Sedang memproses dan menyelaraskan data presensi serta info kelas..."):
             try:
                 # 1. DETEKSI PERTEMUAN MAKSIMAL DARI FILE BARU YANG DIUNGGAH
                 max_pertemuan_baru = 0
@@ -61,6 +69,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 df_rekap = pd.DataFrame()
                 existing_meetings = []
                 max_pertemuan_lama = 0
+                dict_kelas_mapping = {} # Menyimpan mapping NIM -> Kelas dari form
                 
                 if master_file is not None:
                     df_master_raw = pd.read_excel(master_file)
@@ -79,6 +88,12 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     
                     df_rekap['Nama'] = df_master_raw['Nama'].values
                     df_rekap['NIM / NPM'] = df_master_raw[kolom_nim_master].values
+                    
+                    # Ambil kolom Kelas lama jika sudah ada di rekap sebelumnya
+                    if 'Kelas' in df_master_raw.columns:
+                        df_rekap['Kelas'] = df_master_raw['Kelas'].fillna("-").values
+                    else:
+                        df_rekap['Kelas'] = "-"
                     
                     # Deteksi kolom pertemuan yang sudah ada di file rekap lama
                     for col in df_master_raw.columns:
@@ -112,9 +127,10 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                         df_base_members = df_built_in.drop_duplicates(subset=['NIM / NPM']).sort_values(by=['Nama']).reset_index(drop=True)
                         df_rekap['Nama'] = df_base_members['Nama'].values
                         df_rekap['NIM / NPM'] = df_base_members['NIM / NPM'].values
+                        df_rekap['Kelas'] = "-" # Placeholder awal sebelum di-update dari form
                         st.success(f"✨ File Master kosong. Sistem otomatis membuat format baru dari form harian: Terdeteksi {len(df_rekap)} anggota unik.")
                     else:
-                        st.error("❌ Gagal memproses data. Pastikan file form harian memiliki kolom 'Nama' dan kolom Identitas seperti 'NIM / NPM' atau 'NBI'!")
+                        st.error("❌ Gagal memproses data. Pastikan file form harian memiliki kolom 'Nama' dan kolom Identitas seperti 'NIM / NPM'!")
                         st.stop()
 
                 # 3. TENTUKAN JUMLAH KOLOM PERTEMUAN SECARA DINAMIS
@@ -130,7 +146,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     if p not in df_rekap.columns:
                         df_rekap[p] = "Alpa"
 
-                # 4. ISI/UPDATE DATA DARI FILE FORM ABSENSI BARU
+                # 4. ISI/UPDATE DATA PRESENSI & AMBIL DATA KELAS DARI FORM BARU
                 kehadiran_per_hari = {}
                 
                 for src, nomor_p in file_info_list:
@@ -138,6 +154,8 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     df_src.columns = df_src.columns.str.strip()
                     
                     kolom_nim_src = temukan_kolom_nim(df_src.columns)
+                    kolom_kelas_src = temukan_kolom_kelas(df_src.columns)
+                    
                     if not kolom_nim_src:
                         st.warning(f"⚠️ File '{src.name}' dilewati karena tidak ditemukan kolom identitas NIM/NPM/NBI.")
                         continue
@@ -145,32 +163,45 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     df_src[kolom_nim_src] = df_src[kolom_nim_src].astype(str).str.strip()
                     df_src = df_src.drop_duplicates(subset=[kolom_nim_src], keep='first')
                     
+                    # Jika kolom kelas ditemukan di file harian, simpan informasinya ke kamus mapping
+                    if kolom_kelas_src:
+                        for _, row in df_src.iterrows():
+                            nim_val = row[kolom_nim_src]
+                            kelas_val = row[kolom_kelas_src]
+                            if pd.notna(kelas_val):
+                                dict_kelas_mapping[nim_val] = str(kelas_val).strip()
+                    
                     target_kolom = f"Pertemuan {nomor_p}"
                     
                     # Update status Hadir
                     status_hadir_baru = df_rekap['NIM / NPM'].isin(df_src[kolom_nim_src])
                     df_rekap.loc[status_hadir_baru, target_kolom] = 'Hadir'
 
+                # Pembaruan info Kelas secara dinamis berdasarkan data terbaru yang di-scan dari form harian
+                if dict_kelas_mapping:
+                    for idx, row in df_rekap.iterrows():
+                        nim_current = row['NIM / NPM']
+                        if nim_current in dict_kelas_mapping:
+                            df_rekap.at[idx, 'Kelas'] = dict_kelas_mapping[nim_current]
+
                 # 5. HITUNG TOTAL HADIR AKTUAL AKHIR
                 df_rekap['Total Hadir'] = (df_rekap[list_pertemuan_all] == 'Hadir').sum(axis=1)
                 
-                # Susun struktur susunan kolom final: No. -> Nama -> NIM / NPM -> Total Hadir -> Sesi Pertemuan
+                # Susun struktur susunan kolom final: No. -> Nama -> NIM / NPM -> Kelas -> Total Hadir -> Sesi Pertemuan
                 df_rekap.insert(0, 'No.', range(1, len(df_rekap) + 1))
-                susunan_kolom_final = ['No.', 'Nama', 'NIM / NPM', 'Total Hadir'] + list_pertemuan_all
+                susunan_kolom_final = ['No.', 'Nama', 'NIM / NPM', 'Kelas', 'Total Hadir'] + list_pertemuan_all
                 df_rekap = df_rekap[susunan_kolom_final]
 
                 for p in list_pertemuan_all:
                     kehadiran_per_hari[p] = (df_rekap[p] == 'Hadir').sum()
 
                 # --- 🔍 FITUR TAMBAHAN: PENGECEKAN KESAMAAN NAMA (DUPLIKAT) 🔍 ---
-                # Mengabaikan huruf besar/kecil (case-insensitive) untuk akurasi pengecekan nama kembar
                 df_nama_lower = df_rekap['Nama'].str.lower()
                 duplikat_nama = df_rekap[df_nama_lower.duplicated(keep=False)]
                 
                 if not duplikat_nama.empty:
                     st.sidebar.markdown("---")
                     st.sidebar.warning("⚠️ **Perhatian: Terdeteksi Kesamaan Nama!**")
-                    # Kelompokkan nama yang sama untuk ditampilkan di Sidebar Note
                     for nama_tertentu, group in duplikat_nama.groupby(df_rekap['Nama'].str.lower()):
                         nama_asli = group['Nama'].iloc[0]
                         nim_list = ", ".join(group['NIM / NPM'].tolist())
