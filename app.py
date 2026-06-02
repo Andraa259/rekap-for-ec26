@@ -94,13 +94,11 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     else:
                         df_rekap['Kelas'] = "-"
                     
-                    # Deteksi kolom pertemuan lama (baik yang pakai simbol maupun teks lama)
                     for col in df_master_raw.columns:
                         if col.startswith("Pertemuan "):
                             existing_meetings.append(col)
                             angka_p = int(col.replace("Pertemuan ", ""))
                             max_pertemuan_lama = max(max_pertemuan_lama, angka_p)
-                            # Normalisasi inputan lama jika mengandung centang/silang
                             df_rekap[col] = df_master_raw[col].fillna("❌").replace({"Hadir": "✅", "Alpa": "❌"}).values
                             
                     st.info(f"📂 Melanjutkan rekap sebelumnya. Terdeteksi {len(df_rekap)} anggota dan {len(existing_meetings)} pertemuan lama.")
@@ -142,12 +140,11 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 
                 list_pertemuan_all = [f"Pertemuan {i}" for i in range(1, total_maksimal_pertemuan + 1)]
                 
-                # Mengisi default awal dengan simbol silang merah ❌
                 for p in list_pertemuan_all:
                     if p not in df_rekap.columns:
                         df_rekap[p] = "❌"
 
-                # 4. ISI/UPDATE DATA PRESENSI (DENGAN SIMBOL ✅) & INFO KELAS
+                # 4. ISI/UPDATE DATA PRESENSI & AMBIL DATA KELAS DARI FORM BARU
                 kehadiran_per_hari = {}
                 
                 for src, nomor_p in file_info_list:
@@ -173,7 +170,6 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     
                     target_kolom = f"Pertemuan {nomor_p}"
                     
-                    # Update status dengan simbol Centang Hijau ✅ jika hadir
                     status_hadir_baru = df_rekap['NIM / NPM'].isin(df_src[kolom_nim_src])
                     df_rekap.loc[status_hadir_baru, target_kolom] = '✅'
 
@@ -183,37 +179,39 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                         if nim_current in dict_kelas_mapping:
                             df_rekap.at[idx, 'Kelas'] = dict_kelas_mapping[nim_current]
 
-                # 5. HITUNG TOTAL HADIR AKTUAL (Menghitung jumlah karakter ✅)
+                # 5. HITUNG TOTAL HADIR AKTUAL
                 df_rekap['Total Hadir'] = (df_rekap[list_pertemuan_all] == '✅').sum(axis=1)
 
-                # --- 📈 PROSES UPGRADE: MULTI-LEVEL SORTING 📈 ---
-                # Aturan: Total Hadir (Descending) -> Kelas (Ascending) -> Nama (Ascending)
+                # --- MULTI-LEVEL SORTING ---
                 df_rekap = df_rekap.sort_values(
                     by=['Total Hadir', 'Kelas', 'Nama'],
                     ascending=[False, True, True]
                 ).reset_index(drop=True)
 
-                # Pasang nomor urut konvensional yang berurutan kembali setelah di-sorting
+                # Pasang nomor urut konvensional
                 df_rekap.insert(0, 'No.', range(1, len(df_rekap) + 1))
                 
-                # Susun struktur penempatan kolom final
+                # Susun struktur susunan kolom final
                 susunan_kolom_final = ['No.', 'Nama', 'NIM / NPM', 'Kelas', 'Total Hadir'] + list_pertemuan_all
                 df_rekap = df_rekap[susunan_kolom_final]
 
                 for p in list_pertemuan_all:
                     kehadiran_per_hari[p] = (df_rekap[p] == '✅').sum()
 
-                # --- 🔍 FITUR TAMBAHAN: PENGECEKAN KESAMAAN NAMA (DUPLIKAT) 🔍 ---
-                df_nama_lower = df_rekap['Nama'].str.lower()
-                duplikat_nama = df_rekap[df_nama_lower.duplicated(keep=False)]
+                # --- 🌟 UPGRADE CRITICAL: FORMAT UPPERCASE EACH WORD & COMPARE ULANG DI TAHAP AKHIR 🌟 ---
+                # Mengubah format nama di tabel utama menjadi Uppercase Each Word (.str.title()) setelah semua proses selesai
+                df_rekap['Nama'] = df_rekap['Nama'].str.title()
+                
+                # Melakukan komparasi ulang / cek kesamaan nama dari data hasil finalisasi format
+                duplikat_nama = df_rekap[df_rekap['Nama'].duplicated(keep=False)]
                 
                 if not duplikat_nama.empty:
                     st.sidebar.markdown("---")
                     st.sidebar.warning("⚠️ **Perhatian: Terdeteksi Kesamaan Nama!**")
-                    for nama_tertentu, group in duplikat_nama.groupby(df_rekap['Nama'].str.lower()):
-                        nama_asli = group['Nama'].iloc[0]
+                    # Kelompokkan data berdasarkan nama terformat judul untuk nota peringatan yang akurat
+                    for nama_tertentu, group in duplikat_nama.groupby('Nama'):
                         nim_list = ", ".join(group['NIM / NPM'].tolist())
-                        st.sidebar.write(f"- Nama **\"{nama_asli}\"** ditemukan lebih dari satu kali dengan NIM/NPM berbeda: ({nim_list})")
+                        st.sidebar.write(f"- Nama **\"{nama_tertentu}\"** ditemukan lebih dari satu kali dengan NIM/NPM berbeda: ({nim_list})")
                     st.sidebar.info("💡 *Sistem tetap berjalan normal karena pencocokan mutlak menggunakan NIM / NPM.*")
 
                 # ----------------- VISUALISASI DASHBOARD -----------------
@@ -266,7 +264,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 ws.row_dimensions[2].height = 24
                 ws.row_dimensions[3].height = 24
 
-                # 2. Baris Judul Tabel / Header (Baris 6) -> 🌟 UPGRADE: WARNA HIJAU CERAH 🌟
+                # 2. Baris Judul Tabel / Header (Baris 6)
                 header_row = 6
                 ws.row_dimensions[header_row].height = 28
                 
@@ -277,7 +275,6 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 header_border = Border(left=thin_side, right=thin_side, top=thick_side, bottom=thick_side)
                 
                 header_font = Font(name="Calibri", size=11, bold=True, color="000000")
-                # Menggunakan warna hijau mint/cerah premium (Hex: 2ECC71)
                 header_fill = PatternFill(start_color="2ECC71", end_color="2ECC71", fill_type="solid")
 
                 for col_idx, col_name in enumerate(columns_list, start=2):
