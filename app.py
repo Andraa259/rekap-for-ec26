@@ -98,7 +98,6 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                             df_check.columns = df_check.columns.str.strip()
                             kolom_nim_src = temukan_kolom_nim(df_check.columns)
                             if kolom_nim_src and 'Nama' in df_check.columns:
-                                # Rename sementara ke format standar agar mudah digabungkan
                                 df_temp = df_check[['Nama', kolom_nim_src]].copy()
                                 df_temp.columns = ['Nama', 'NIM / NPM']
                                 list_for_built_in.append(df_temp)
@@ -148,7 +147,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     
                     target_kolom = f"Pertemuan {nomor_p}"
                     
-                    # Update status Hadir berdasarkan pencocokan kode identitas mahasiswa
+                    # Update status Hadir
                     status_hadir_baru = df_rekap['NIM / NPM'].isin(df_src[kolom_nim_src])
                     df_rekap.loc[status_hadir_baru, target_kolom] = 'Hadir'
 
@@ -162,6 +161,21 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
 
                 for p in list_pertemuan_all:
                     kehadiran_per_hari[p] = (df_rekap[p] == 'Hadir').sum()
+
+                # --- 🔍 FITUR TAMBAHAN: PENGECEKAN KESAMAAN NAMA (DUPLIKAT) 🔍 ---
+                # Mengabaikan huruf besar/kecil (case-insensitive) untuk akurasi pengecekan nama kembar
+                df_nama_lower = df_rekap['Nama'].str.lower()
+                duplikat_nama = df_rekap[df_nama_lower.duplicated(keep=False)]
+                
+                if not duplikat_nama.empty:
+                    st.sidebar.markdown("---")
+                    st.sidebar.warning("⚠️ **Perhatian: Terdeteksi Kesamaan Nama!**")
+                    # Kelompokkan nama yang sama untuk ditampilkan di Sidebar Note
+                    for nama_tertentu, group in duplikat_nama.groupby(df_rekap['Nama'].str.lower()):
+                        nama_asli = group['Nama'].iloc[0]
+                        nim_list = ", ".join(group['NIM / NPM'].tolist())
+                        st.sidebar.write(f"- Nama **\"{nama_asli}\"** ditemukan lebih dari satu kali dengan NIM/NPM berbeda: ({nim_list})")
+                    st.sidebar.info("💡 *Sistem tetap berjalan normal karena pencocokan mutlak menggunakan NIM / NPM.*")
 
                 # ----------------- VISUALISASI DASHBOARD -----------------
                 st.subheader("📌 Ringkasan Metrik Kelas (Dinamis)")
