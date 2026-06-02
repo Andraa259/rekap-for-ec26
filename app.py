@@ -10,7 +10,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Wonderful Class Presence Hub", layout="wide")
 
 st.title("📊 Wonderful Class Presence Dashboard & Dynamic Matrix")
-st.write("Sistem Matriks Presensi Otomatis (No, Nama, NBI, Total Hadir, P1 - P-Dinamis) dengan Fitur Auto-Expand Kolom.")
+st.write("Sistem Matriks Presensi Otomatis (No, Nama, NIM/NPM, Total Hadir, P1 - P-Dinamis) dengan Fitur Auto-Expand Kolom.")
 
 # ----------------- SIDEBAR INPUT -----------------
 st.sidebar.header("📁 Unggah Dokumen Presensi")
@@ -27,6 +27,14 @@ source_files = st.sidebar.file_uploader(
     accept_multiple_files=True,
     key="sources_upload"
 )
+
+# Fungsi bantuan untuk mendeteksi kolom NIM/NPM/NBI secara fleksibel
+def temukan_kolom_nim(df_columns):
+    for col in df_columns:
+        col_clean = str(col).strip().lower()
+        if col_clean in ['nim', 'npm', 'nbi', 'nim / npm', 'nim/npm', 'no. induk']:
+            return col
+    return None
 
 # ----------------- LOGIKA UTAMA -----------------
 if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
@@ -61,15 +69,16 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     if df_master_raw.columns[0].startswith('Unnamed:'):
                         df_master_raw = df_master_raw.iloc[:, 1:]
                     
-                    if 'NBI' not in df_master_raw.columns or 'Nama' not in df_master_raw.columns:
-                        st.error("❌ File Master / Rekap Sebelumnya harus memiliki kolom 'NBI' dan 'Nama'!")
+                    kolom_nim_master = temukan_kolom_nim(df_master_raw.columns)
+                    if not kolom_nim_master or 'Nama' not in df_master_raw.columns:
+                        st.error("❌ File Master / Rekap Sebelumnya harus memiliki kolom 'Nama' dan kolom Identitas (NIM / NPM / NBI)!")
                         st.stop()
                         
-                    df_master_raw['NBI'] = df_master_raw['NBI'].astype(str).str.strip()
+                    df_master_raw[kolom_nim_master] = df_master_raw[kolom_nim_master].astype(str).str.strip()
                     df_master_raw['Nama'] = df_master_raw['Nama'].astype(str).str.strip()
                     
                     df_rekap['Nama'] = df_master_raw['Nama'].values
-                    df_rekap['NBI'] = df_master_raw['NBI'].values
+                    df_rekap['NIM / NPM'] = df_master_raw[kolom_nim_master].values
                     
                     # Deteksi kolom pertemuan yang sudah ada di file rekap lama
                     for col in df_master_raw.columns:
@@ -87,22 +96,26 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                         try:
                             df_check = pd.read_excel(src)
                             df_check.columns = df_check.columns.str.strip()
-                            if 'NBI' in df_check.columns and 'Nama' in df_check.columns:
-                                list_for_built_in.append(df_check[['Nama', 'NBI']])
+                            kolom_nim_src = temukan_kolom_nim(df_check.columns)
+                            if kolom_nim_src and 'Nama' in df_check.columns:
+                                # Rename sementara ke format standar agar mudah digabungkan
+                                df_temp = df_check[['Nama', kolom_nim_src]].copy()
+                                df_temp.columns = ['Nama', 'NIM / NPM']
+                                list_for_built_in.append(df_temp)
                         except:
                             continue
                     
                     if list_for_built_in:
                         df_built_in = pd.concat(list_for_built_in, ignore_index=True)
-                        df_built_in['NBI'] = df_built_in['NBI'].astype(str).str.strip()
+                        df_built_in['NIM / NPM'] = df_built_in['NIM / NPM'].astype(str).str.strip()
                         df_built_in['Nama'] = df_built_in['Nama'].astype(str).str.strip()
                         
-                        df_base_members = df_built_in.drop_duplicates(subset=['NBI']).sort_values(by=['Nama']).reset_index(drop=True)
+                        df_base_members = df_built_in.drop_duplicates(subset=['NIM / NPM']).sort_values(by=['Nama']).reset_index(drop=True)
                         df_rekap['Nama'] = df_base_members['Nama'].values
-                        df_rekap['NBI'] = df_base_members['NBI'].values
-                        st.success(f"✨ Membuka format rekap baru otomatis. Terdeteksi {len(df_rekap)} anggota unik.")
+                        df_rekap['NIM / NPM'] = df_base_members['NIM / NPM'].values
+                        st.success(f"✨ File Master kosong. Sistem otomatis membuat format baru dari form harian: Terdeteksi {len(df_rekap)} anggota unik.")
                     else:
-                        st.error("❌ Gagal memproses data. Pastikan file form harian memiliki kolom 'NBI' dan 'Nama'!")
+                        st.error("❌ Gagal memproses data. Pastikan file form harian memiliki kolom 'Nama' dan kolom Identitas seperti 'NIM / NPM' atau 'NBI'!")
                         st.stop()
 
                 # 3. TENTUKAN JUMLAH KOLOM PERTEMUAN SECARA DINAMIS
@@ -112,10 +125,8 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     st.error("❌ Tidak ada kolom pertemuan valid yang terdeteksi dari nama file.")
                     st.stop()
                 
-                # Buat list seluruh kolom pertemuan dari 1 sampai batas maksimal yang baru ditemukan
                 list_pertemuan_all = [f"Pertemuan {i}" for i in range(1, total_maksimal_pertemuan + 1)]
                 
-                # Buat kolom baru jika belum ada di df_rekap (diisi default Alpa)
                 for p in list_pertemuan_all:
                     if p not in df_rekap.columns:
                         df_rekap[p] = "Alpa"
@@ -126,24 +137,29 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 for src, nomor_p in file_info_list:
                     df_src = pd.read_excel(src)
                     df_src.columns = df_src.columns.str.strip()
-                    df_src['NBI'] = df_src['NBI'].astype(str).str.strip()
-                    df_src = df_src.drop_duplicates(subset=['NBI'], keep='first')
+                    
+                    kolom_nim_src = temukan_kolom_nim(df_src.columns)
+                    if not kolom_nim_src:
+                        st.warning(f"⚠️ File '{src.name}' dilewati karena tidak ditemukan kolom identitas NIM/NPM/NBI.")
+                        continue
+                        
+                    df_src[kolom_nim_src] = df_src[kolom_nim_src].astype(str).str.strip()
+                    df_src = df_src.drop_duplicates(subset=[kolom_nim_src], keep='first')
                     
                     target_kolom = f"Pertemuan {nomor_p}"
                     
-                    # Update status Hadir bagi yang datanya masuk di form sesi ini
-                    status_hadir_baru = df_rekap['NBI'].isin(df_src['NBI'])
+                    # Update status Hadir berdasarkan pencocokan kode identitas mahasiswa
+                    status_hadir_baru = df_rekap['NIM / NPM'].isin(df_src[kolom_nim_src])
                     df_rekap.loc[status_hadir_baru, target_kolom] = 'Hadir'
 
                 # 5. HITUNG TOTAL HADIR AKTUAL AKHIR
                 df_rekap['Total Hadir'] = (df_rekap[list_pertemuan_all] == 'Hadir').sum(axis=1)
                 
-                # Susun struktur penempatan kolom: No. -> Nama -> NBI -> Total Hadir -> P1 sampai P-Dinamis
+                # Susun struktur susunan kolom final: No. -> Nama -> NIM / NPM -> Total Hadir -> Sesi Pertemuan
                 df_rekap.insert(0, 'No.', range(1, len(df_rekap) + 1))
-                susunan_kolom_final = ['No.', 'Nama', 'NBI', 'Total Hadir'] + list_pertemuan_all
+                susunan_kolom_final = ['No.', 'Nama', 'NIM / NPM', 'Total Hadir'] + list_pertemuan_all
                 df_rekap = df_rekap[susunan_kolom_final]
 
-                # Hitung statistik kehadiran per sesi untuk visualisasi grafik batang
                 for p in list_pertemuan_all:
                     kehadiran_per_hari[p] = (df_rekap[p] == 'Hadir').sum()
 
@@ -181,7 +197,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 total_cols = len(columns_list)
                 last_col_letter = get_column_letter(1 + total_cols)
 
-                # 1. Judul Utama di Baris 2 & 3 (Merge otomatis mengikuti panjang kolom dinamis)
+                # 1. Judul Utama di Baris 2 & 3
                 ws.merge_cells(f"B2:{last_col_letter}2")
                 ws.merge_cells(f"B3:{last_col_letter}3")
                 ws["B2"] = "REKAPITULASI PRESENSI"
@@ -197,7 +213,7 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 ws.row_dimensions[2].height = 24
                 ws.row_dimensions[3].height = 24
 
-                # 2. Baris Judul Tabel / Header (Baris 6 -> Bold Teks & Bold Border)
+                # 2. Baris Judul Tabel / Header (Baris 6)
                 header_row = 6
                 ws.row_dimensions[header_row].height = 28
                 
