@@ -76,10 +76,10 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     df_master_raw = pd.read_excel(master_file, skiprows=5)
                     df_master_raw.columns = df_master_raw.columns.str.strip()
                     
-                    # 🛠️ ATURAN FIX: Buang Kolom A yang kosong (terbaca Unnamed: 0 karena start di Kolom B)
-                    if df_master_raw.columns[0].startswith('Unnamed:'):
+                    # 🔥 PERBAIKAN SUPER: Deteksi apakah kolom pertama kosong / Unnamed / mengandung spasi kosong
+                    kolom_pertama = str(df_master_raw.columns[0]).strip()
+                    if kolom_pertama.startswith('Unnamed:') or kolom_pertama == "":
                         df_master_raw = df_master_raw.iloc[:, 1:]
-                        # Re-strip ulang nama kolom setelah digeser
                         df_master_raw.columns = df_master_raw.columns.str.strip()
                     
                     # 🌟 KUNCI VALIDASI: Harus ada kolom 'Nama' dan 'NIM / NPM' secara mutlak di file master 🌟
