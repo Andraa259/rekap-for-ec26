@@ -72,11 +72,15 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                 dict_kelas_mapping = {} # Menyimpan mapping NIM -> Kelas dari form
                 
                 if master_file is not None:
-                    df_master_raw = pd.read_excel(master_file)
+                    # 🛠️ ATURAN FIX: Lompat 5 baris (skiprows=5) agar baris 6 langsung dibaca sebagai Judul Kolom Tabel
+                    df_master_raw = pd.read_excel(master_file, skiprows=5)
                     df_master_raw.columns = df_master_raw.columns.str.strip()
                     
+                    # 🛠️ ATURAN FIX: Buang Kolom A yang kosong (terbaca Unnamed: 0 karena start di Kolom B)
                     if df_master_raw.columns[0].startswith('Unnamed:'):
                         df_master_raw = df_master_raw.iloc[:, 1:]
+                        # Re-strip ulang nama kolom setelah digeser
+                        df_master_raw.columns = df_master_raw.columns.str.strip()
                     
                     # 🌟 KUNCI VALIDASI: Harus ada kolom 'Nama' dan 'NIM / NPM' secara mutlak di file master 🌟
                     if 'NIM / NPM' not in df_master_raw.columns or 'Nama' not in df_master_raw.columns:
