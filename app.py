@@ -28,7 +28,7 @@ source_files = st.sidebar.file_uploader(
     key="sources_upload"
 )
 
-# Fungsi bantuan untuk mendeteksi kolom NIM/NPM/NBI secara fleksibel
+# Fungsi bantuan untuk mendeteksi kolom NIM/NPM/NBI secara fleksibel pada file form harian
 def temukan_kolom_nim(df_columns):
     for col in df_columns:
         col_clean = str(col).strip().lower()
@@ -36,7 +36,7 @@ def temukan_kolom_nim(df_columns):
             return col
     return None
 
-# Fungsi bantuan untuk mendeteksi kolom Kelas secara fleksibel
+# Fungsi bantuan untuk mendeteksi kolom Kelas secara fleksibel pada file form harian
 def temukan_kolom_kelas(df_columns):
     for col in df_columns:
         col_clean = str(col).strip().lower()
@@ -78,16 +78,16 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     if df_master_raw.columns[0].startswith('Unnamed:'):
                         df_master_raw = df_master_raw.iloc[:, 1:]
                     
-                    kolom_nim_master = temukan_kolom_nim(df_master_raw.columns)
-                    if not kolom_nim_master or 'Nama' not in df_master_raw.columns:
-                        st.error("❌ File Master / Rekap Sebelumnya harus memiliki kolom 'Nama' dan kolom Identitas (NIM / NPM / NBI)!")
+                    # 🌟 KUNCI VALIDASI: Harus ada kolom 'Nama' dan 'NIM / NPM' secara mutlak di file master 🌟
+                    if 'NIM / NPM' not in df_master_raw.columns or 'Nama' not in df_master_raw.columns:
+                        st.error("❌ File Master / Rekap Sebelumnya harus memiliki kolom 'Nama' dan kolom 'NIM / NPM'!")
                         st.stop()
                         
-                    df_master_raw[kolom_nim_master] = df_master_raw[kolom_nim_master].astype(str).str.strip()
+                    df_master_raw['NIM / NPM'] = df_master_raw['NIM / NPM'].astype(str).str.strip()
                     df_master_raw['Nama'] = df_master_raw['Nama'].astype(str).str.strip()
                     
                     df_rekap['Nama'] = df_master_raw['Nama'].values
-                    df_rekap['NIM / NPM'] = df_master_raw[kolom_nim_master].values
+                    df_rekap['NIM / NPM'] = df_master_raw['NIM / NPM'].values
                     
                     if 'Kelas' in df_master_raw.columns:
                         df_rekap['Kelas'] = df_master_raw['Kelas'].fillna("-").values
@@ -199,16 +199,13 @@ if st.sidebar.button("🚀 Proses & Sinkronisasi Presensi", type="primary"):
                     kehadiran_per_hari[p] = (df_rekap[p] == '✅').sum()
 
                 # --- 🌟 UPGRADE CRITICAL: FORMAT UPPERCASE EACH WORD & COMPARE ULANG DI TAHAP AKHIR 🌟 ---
-                # Mengubah format nama di tabel utama menjadi Uppercase Each Word (.str.title()) setelah semua proses selesai
                 df_rekap['Nama'] = df_rekap['Nama'].str.title()
                 
-                # Melakukan komparasi ulang / cek kesamaan nama dari data hasil finalisasi format
                 duplikat_nama = df_rekap[df_rekap['Nama'].duplicated(keep=False)]
                 
                 if not duplikat_nama.empty:
                     st.sidebar.markdown("---")
                     st.sidebar.warning("⚠️ **Perhatian: Terdeteksi Kesamaan Nama!**")
-                    # Kelompokkan data berdasarkan nama terformat judul untuk nota peringatan yang akurat
                     for nama_tertentu, group in duplikat_nama.groupby('Nama'):
                         nim_list = ", ".join(group['NIM / NPM'].tolist())
                         st.sidebar.write(f"- Nama **\"{nama_tertentu}\"** ditemukan lebih dari satu kali dengan NIM/NPM berbeda: ({nim_list})")
